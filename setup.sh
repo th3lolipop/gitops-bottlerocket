@@ -31,25 +31,25 @@ aws --version
 
 
 echo "Creating EKS control plane ..."
-eksctl create cluster --region us-west-2 --nodes=0 --name bottlerocket --node-ami=auto
+eksctl create cluster --region ap-southeast-1 --nodes=0 --name bottlerocket --node-ami=auto
 
 echo "Applying AWS CNI ..."
 kubectl apply -f aws-k8s-cni.yaml
 
 echo "Generate userdata ..."
-eksctl get cluster --region us-west-2 --name bottlerocket -o json \
+eksctl get cluster --region ap-southeast-1 --name bottlerocket -o json \
 | xq --json '[0].with{"[settings.kubernetes]\napi-server=\"${Endpoint}\"\ncluster-certificate=\"${CertificateAuthority.Data}\"\ncluster-name=\"bottlerocket\""}' -o raw > userdata.toml
 
 echo "Obtain a private subnet ..."
 aws ec2 describe-subnets \
-   --subnet-ids $(eksctl get cluster --region us-west-2 --name bottlerocket -o json | xq --json '.ResourcesVpcConfig.SubnetIds.flatten().join(" ")' -o raw) \
-   --region us-west-2 \
+   --subnet-ids $(eksctl get cluster --region ap-southeast-1 --name bottlerocket -o json | xq --json '.ResourcesVpcConfig.SubnetIds.flatten().join(" ")' -o raw) \
+   --region ap-southeast-1 \
    --query "Subnets[].[SubnetId, Tags[?Key=='aws:cloudformation:logical-id'].Value]" \
 | xq --json '.flatten()' \
 | xq --json '[x.findIndexOf{it =~ /Private.*[AB]$/}-1]' -o raw > SUBNET_ID
 
 echo "Get Instance Role Name ..."
-eksctl get iamidentitymapping --region us-west-2 --cluster bottlerocket -o json \
+eksctl get iamidentitymapping --region ap-southeast-1 --cluster bottlerocket -o json \
 | xq --json '[0].rolearn.split(/\//)[1]' -o raw > INSTANCE_ROLE_NAME
 
 echo "Attach AmazonSSMManagedInstanceCore policy ..."
@@ -77,8 +77,8 @@ aws ec2 run-instances \
    --subnet-id $(cat SUBNET_ID) \
    --security-group-ids $(cat SECURITY_GROUP_IDS) \
    --image-id ami-0ba66967c5a0a704a \
-   --instance-type c3.large \
-   --region us-west-2 \
+   --instance-type c5.large \
+   --region ap-southeast-1 \
    --tag-specifications 'ResourceType=instance,Tags=[{Key=kubernetes.io/cluster/bottlerocket,Value=owned}]' \
    --user-data file://userdata.toml \
    --iam-instance-profile Name=$(cat INSTANCE_PROFILE_NAME) | xq --json '.Instances[0].InstanceId' -o raw > INSTANCE_ID
@@ -89,6 +89,6 @@ aws ec2 wait instance-running \
 
 EKSCTL_EXPERIMENTAL=true eksctl enable repo --cluster=bottlerocket \
   --timeout=200s \
-  --region=us-west-2 \
+  --region=ap-southeast-1 \
   --git-url=$(git remote get-url --push origin) \
   --git-email=noreply+flux@weave.works
